@@ -1,9 +1,35 @@
 import os
+import threading
+import time
+import requests
+from flask import Flask
 from telebot import TeleBot, types
 from pytube import YouTube
-from keep_alive import keep_alive
 
-# Tokenni o'qish
+# === Flask server (keep-alive) ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ Bot is alive!"
+
+def run_server():
+    port = int(os.getenv("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def ping():
+    while True:
+        time.sleep(600)
+        try:
+            requests.get(os.getenv("RENDER_APP_URL"))  # Render app URL env variable
+        except:
+            pass
+
+def keep_alive():
+    threading.Thread(target=run_server).start()
+    threading.Thread(target=ping).start()
+
+# === Telegram bot ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN topilmadi! Render Environment'da qo'shganmisan?")
@@ -34,20 +60,23 @@ def handle_url(message):
 
     bot.send_message(message.chat.id, "📥 Qaysi formatni yuklaymiz?", reply_markup=markup)
 
-# Tugma bosilganda
+# Tugma bosilganda (callback handler)
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     url, quality = call.data.split("|")
-    bot.answer_callback_query(call.id, f"{quality} format tanlandi! Yuklab olinmoqda...")
+    bot.answer_callback_query(call.id, f"{quality} format tanlandi! Yuklab olinmoqda... ⏳")
 
     try:
-        yt = YouTube(url)
+        yt = YouTube(url, use_oauth=False, allow_oauth_cache=True)
 
         if quality == "audio":
-            stream = yt.streams.filter(only_audio=True).first()
+            stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
             filename = "audio.mp3"
         else:
+            # Progressive va adaptive formatlarni tekshirish
             stream = yt.streams.filter(res=quality, progressive=True).first()
+            if not stream:
+                stream = yt.streams.filter(res=quality).first()  # Adaptive fallback
             if not stream:
                 bot.send_message(call.message.chat.id, f"❌ {quality} format topilmadi.")
                 return
@@ -59,10 +88,11 @@ def callback(call):
             bot.send_document(call.message.chat.id, f)
 
         os.remove(path)
+
     except Exception as e:
         bot.send_message(call.message.chat.id, f"⚠️ Xatolik: {e}")
 
-# Asosiy ishga tushirish
+# === Main ===
 if __name__ == "__main__":
     keep_alive()
     print("🚀 Bot is running...")
