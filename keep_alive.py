@@ -15,6 +15,7 @@ def ping():
     while True:
         time.sleep(600)
         try:
+            # ❗ Bu yerga o'z Render web servising URL manzilini yoz:
             requests.get("https://youtubebot-kjbb.onrender.com")
         except:
             pass
