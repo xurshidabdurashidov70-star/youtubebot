@@ -1,70 +1,65 @@
-import os
-from pytube import YouTube
-from telebot import TeleBot, types
 from keep_alive import keep_alive
-from dotenv import load_dotenv
+import telebot
+from telebot import types
+from pytube import YouTube
+import os
 
-load_dotenv()
+# === Telegram bot tokenini o'qish ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-bot = TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN)
 
+# === /start komandasi ===
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "🎬 Salom! YouTube yuklab beruvchi botga xush kelibsiz!\n\n"
-                          "📎 Video havolasini yuboring.\n"
-                          "🎥 360p, 480p, 720p sifatlar mavjud.\n"
-                          "🎵 Faqat audio yuklash ham mumkin.")
+    bot.reply_to(message, "🎥 Salom! Menga YouTube havolasini yubor, men uni yuklab beraman.")
 
+# === YouTube havola yuborilganda ===
 @bot.message_handler(func=lambda m: True)
-def handle_link(message):
+def handle_url(message):
     url = message.text.strip()
     if "youtube.com" not in url and "youtu.be" not in url:
-        bot.reply_to(message, "⚠️ Iltimos, to‘g‘ri YouTube havolasini yuboring.")
+        bot.reply_to(message, "❌ Bu YouTube havolasi emas.")
         return
 
-    yt = YouTube(url)
-    markup = types.InlineKeyboardMarkup()
-    for res in ["360p", "480p", "720p", "audio"]:
-        markup.add(types.InlineKeyboardButton(res, callback_data=f"{url}|{res}"))
+    # Tugmalarni gorizontal tarzda yaratish
+    markup = types.InlineKeyboardMarkup(row_width=4)
+    btn360 = types.InlineKeyboardButton("360p", callback_data=f"{url}|360p")
+    btn480 = types.InlineKeyboardButton("480p", callback_data=f"{url}|480p")
+    btn720 = types.InlineKeyboardButton("720p", callback_data=f"{url}|720p")
+    btnaudio = types.InlineKeyboardButton("Audio", callback_data=f"{url}|audio")
+    markup.add(btn360, btn480, btn720, btnaudio)
 
-    bot.send_message(message.chat.id, f"🎬 {yt.title}\nFormatni tanlang:", reply_markup=markup)
+    bot.send_message(message.chat.id, "🎬 Qaysi formatda yuklaymiz?", reply_markup=markup)
 
+# === Tugma bosilganda (callback handler) ===
 @bot.callback_query_handler(func=lambda call: True)
-def download_video(call):
+def callback(call):
     url, quality = call.data.split("|")
-    yt = YouTube(url)
-    chat_id = call.message.chat.id
+    bot.answer_callback_query(call.id, f"{quality} format tanlandi, yuklab olinmoqda... ⏳")
 
     try:
+        yt = YouTube(url)
         if quality == "audio":
             stream = yt.streams.filter(only_audio=True).first()
             filename = "audio.mp3"
         else:
-            stream = yt.streams.filter(progressive=True, res=quality).first()
+            stream = yt.streams.filter(res=quality, progressive=True).first()
             if not stream:
-                bot.send_message(chat_id, f"❌ {quality} format topilmadi.")
+                bot.send_message(call.message.chat.id, f"❌ {quality} format topilmadi.")
                 return
             filename = f"video_{quality}.mp4"
 
-        bot.answer_callback_query(call.id, f"⬇️ Yuklanmoqda ({quality})...")
-        file_path = stream.download(filename=filename)
+        file = stream.download(filename=filename)
 
-        file_size = os.path.getsize(file_path) / (1024 * 1024)
-        if file_size > 45:
-            bot.send_message(chat_id, f"⚠️ Fayl juda katta ({file_size:.1f} MB), Render cheklovi 50 MB!")
-            os.remove(file_path)
-            return
+        with open(file, "rb") as video:
+            bot.send_document(call.message.chat.id, video)
 
-        if quality == "audio":
-            bot.send_audio(chat_id, open(file_path, 'rb'))
-        else:
-            bot.send_video(chat_id, open(file_path, 'rb'))
-
-        os.remove(file_path)
+        os.remove(file)
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Yuklab olishda xato: {str(e)}")
+        bot.send_message(call.message.chat.id, f"⚠️ Xatolik:\n{e}")
 
-keep_alive()
-bot.polling(non_stop=True)
-
+# === Keep Alive ishga tushirish va botni polling qilish ===
+if __name__ == "__main__":
+    keep_alive()  # 🔥 bu Flask server + pingni ishga tushiradi
+    bot.infinity_polling()
