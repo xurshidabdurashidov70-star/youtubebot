@@ -1,7 +1,7 @@
 from flask import Flask
 import threading, time, requests, os
 
-app = Flask('')
+app = Flask(__name__)
 
 @app.route('/')
 def home():
@@ -20,7 +20,5 @@ def ping():
             pass
 
 def keep_alive():
-    t = threading.Thread(target=run)
-    t.start()
-    p = threading.Thread(target=ping)
-    p.start()
+    threading.Thread(target=run).start()
+    threading.Thread(target=ping).start()
