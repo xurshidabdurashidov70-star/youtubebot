@@ -6,7 +6,8 @@ from keep_alive import keep_alive
 # 🔐 Tokenni olish
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN topilmadi! Render Environment'da qo'shganmisan?")
+    print("❌ TELEGRAM_BOT_TOKEN topilmadi. Render Environment'da qo‘shilganini tekshir!")
+    exit()
 
 bot = TeleBot(TOKEN, parse_mode="HTML")
 
@@ -23,7 +24,7 @@ def handle_url(message):
         bot.reply_to(message, "❌ Bu YouTube havolasi emas.")
         return
 
-    markup = types.InlineKeyboardMarkup(row_width=4)
+    markup = types.InlineKeyboardMarkup(row_width=3)
     btn360 = types.InlineKeyboardButton("360p", callback_data=f"{url}|360p")
     btn480 = types.InlineKeyboardButton("480p", callback_data=f"{url}|480p")
     btn720 = types.InlineKeyboardButton("720p", callback_data=f"{url}|720p")
@@ -37,7 +38,7 @@ def handle_url(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     url, quality = call.data.split("|")
-    bot.answer_callback_query(call.id, f"{quality} format tanlandi! Yuklab olinmoqda...")
+    bot.answer_callback_query(call.id, f"{quality} tanlandi! Yuklab olinmoqda...")
 
     try:
         yt = YouTube(url)
@@ -46,20 +47,28 @@ def callback(call):
             stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
             filename = "audio.mp3"
         else:
-            stream = yt.streams.filter(res=quality).first()
+            stream = yt.streams.filter(res=quality, progressive=True).first()
             if not stream:
                 bot.send_message(call.message.chat.id, f"❌ {quality} format topilmadi.")
                 return
             filename = f"video_{quality}.mp4"
 
-        file = stream.download(filename=filename)
+        # Fayl hajmini tekshirish (Telegram limiti 50 MB)
+        if stream.filesize > 50 * 1024 * 1024:
+            bot.send_message(call.message.chat.id, "⚠️ Fayl 50MB dan katta, Telegram orqali yuborib bo‘lmaydi.")
+            return
 
-        with open(file, "rb") as f:
+        # Yuklab olish
+        file_path = stream.download(filename=filename)
+
+        # Foydalanuvchiga yuborish
+        with open(file_path, "rb") as f:
             bot.send_document(call.message.chat.id, f)
 
-        os.remove(file)
+        os.remove(file_path)
+
     except Exception as e:
-        bot.send_message(call.message.chat.id, f"⚠️ Xatolik:\n{e}")
+        bot.send_message(call.message.chat.id, f"⚠️ Xatolik yuz berdi:\n<code>{e}</code>")
 
 # 🔸 Ishga tushirish
 if __name__ == "__main__":
